@@ -2,6 +2,7 @@
 # tdluong@crimson.ua.edu
 # 2025/02/24
 import argparse
+import numpy as np
 
 def parse_arg():
     # Expose as much real life configuration from Blickfeld Cube1 as posible along with emulate real-life constraint
@@ -51,16 +52,31 @@ def gen_scan_pattern(lidar_params):
     # Row 1 - offset from start of frame in nano second
     # Row 2 - azimuth in radian
     # Row 3 - elevation in radian
-
-    hor_ang_res_mdeg = lidar_params.hor_ang_res * 100 
+    HOR_MIR_FOV_MDEG = 80 * 1000 # Mirror FOV. Is not configurable
+    hor_ang_res_mdeg = lidar_params.hor_ang_res * 100
+    hor_meas_fov_mdeg = lidar_params.hor_meas_fov * 1000
+    ver_meas_fov_mdeg = lidar_params.hor_meas_fov * 1000
     
     # Generate mirror ramp functions
     tot_num_scanline = lidar_params.num_scan_up + lidar_params.num_scan_down
     ramp_transition = lidar_params.num_scan_up / tot_num_scanline
     period_per_scanline_s = 1/lidar_params.freq
     frame_period_s = tot_num_scanline * period_per_scanline_s
-    num_point_per_scanline = lidar_params.hor_meas_fov * 1000 / hor_ang_res_mdeg
+    num_point_per_scanline = int(hor_meas_fov_mdeg / hor_ang_res_mdeg)
     total_num_point = num_point_per_scanline * tot_num_scanline
+
+    angle_to_trig_down_mdeg = np.arange(HOR_MIR_FOV_MDEG/2, -HOR_MIR_FOV_MDEG/2, -hor_ang_res_mdeg)
+
+    time_vec_half_period = np.arccos(2 * angle_to_trig_down_mdeg / HOR_MIR_FOV_MDEG) / (2 * np.pi * lidar_params.freq)
+
+    time_vec_s = time_vec_half_period.copy()
+
+    for ii in range(1,tot_num_scanline):
+        time_vec_s = np.concatenate((time_vec_s,0.5 * ii * period_per_scanline_s + time_vec_half_period))
+    time_vec_ns = np.round(time_vec_s * 1000000000)
+
+    print(time_vec_ns.size)
+    print(time_vec_ns)
     
 
 
@@ -75,5 +91,6 @@ if __name__ == "__main__":
     if not is_valid_params(lidar_params):
         exit()
 
+    gen_scan_pattern(lidar_params)
 
     print(output_json_filename)
