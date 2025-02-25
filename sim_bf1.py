@@ -14,8 +14,10 @@ class ScanPattern(object):
     time_vec_ns = np.array([])
     az_vec_deg = np.array([])
     el_vec_deg = np.array([])
+    HFOV = 0
+    VFOV = 0
 
-    def __init__(self, frame_period_s, total_point, num_scanline, time_vec_ns, az_vec_deg, el_vec_deg):
+    def __init__(self, frame_period_s, total_point, num_scanline, time_vec_ns, az_vec_deg, el_vec_deg, hfov, vfov):
         self.frame_period_s = frame_period_s
         self.frame_rate_hz = 1/frame_period_s
         self.num_scanline = num_scanline
@@ -24,9 +26,8 @@ class ScanPattern(object):
         self.time_vec_ns = time_vec_ns
         self.az_vec_deg = az_vec_deg
         self.el_vec_deg = el_vec_deg
-
-
-
+        self.HFOV = hfov
+        self.VFOV = vfov
 
 def parse_arg():
     # Expose as much real life configuration from Blickfeld Cube1 as posible along with emulate real-life constraint
@@ -70,7 +71,7 @@ def is_valid_params(lidar_params):
 
     return True
 
-def gen_scan_pattern(lidar_params):
+def gen_scan_pattern(lidar_params) -> ScanPattern:
     # Pre compute some constants
     HOR_MIR_FOV_MDEG = 80 * 1000 # Mirror FOV. Is not configurable
     hor_ang_res_mdeg = lidar_params.hor_ang_res * 100
@@ -119,16 +120,145 @@ def gen_scan_pattern(lidar_params):
 
     num_point = ver_ang_deg.size
 
-    return ScanPattern(frame_period_s, num_point, tot_num_scanline, time_vec_ns, hor_ang_deg, ver_ang_deg)
+    return ScanPattern(frame_period_s, num_point, tot_num_scanline, time_vec_ns, 
+                       hor_ang_deg, ver_ang_deg, lidar_params.hor_meas_fov, lidar_params.ver_meas_fov)
+
+def print_field(file_obj, key: str, val, comma = True, dec_place = 0, indent_level=1):
+    for ii in range(indent_level):
+        file_obj.write("  ")
+
+    if isinstance(val,str):
+        file_obj.write("\"" + key + "\": \"" + val + "\"")
+    else:
+        if dec_place == 0:
+            # Integer printing
+            file_obj.write("\"" + key + "\": " + str(val))  
+        else:
+            # Float val with defined decimal places
+            val_str = "{:.{prec}f}".format(val, prec=dec_place)
+            file_obj.write("\"" + key + "\": " + val_str)
+
+    if comma:
+        file_obj.write(",\n")
+    else:
+        file_obj.write("\n")
+    file_obj.flush()
+
+def print_array(file_obj, key: str, val, comma = True, dec_place = 0, indent_level=1):
+    for ii in range(indent_level):
+        file_obj.write("  ")
     
+    file_obj.write("\"" + key + "\": [\n") 
+
+    num_row, num_col = val.shape
+
+    for ii in range(num_row):
+        for jj in range(indent_level+1):
+            file_obj.write("  ")
+
+        for jj in range(num_col):
+            if dec_place == 0:
+                file_obj.write(str(int(val[ii][jj])))
+            else:
+                val_str = "{:.{prec}f}".format(val[ii][jj], prec=dec_place)
+                file_obj.write(val_str)
+            if not jj == num_col-1:
+                file_obj.write(", ")
+        if not ii == num_row-1:
+            file_obj.write(",\n")
+        else:
+            file_obj.write("\n")
+
+    for ii in range(indent_level+1):
+        file_obj.write("  ")
+    file_obj.write("]")
+
+    if comma:
+        file_obj.write(",\n")
+    else:
+        file_obj.write("\n")
+    file_obj.flush()
+
+def create_lidar_json(scan_pattern: ScanPattern, filename: str):
+    f = open(filename+".json", "w")
+    f.write("{\n")
+    # Write meta data
+    print_field(f,"name",filename)
+    print_field(f, "class", "sensor")
+    print_field(f, "type", "lidar")
+    print_field(f, "driveWorksId", "GENERIC")
+    print_field(f, "comment1", "Automatically generated using https://github.com/TL-4319/isaacsim-blickfeld-sim")
+    
+    # Scan profile
+    f.write("  \"profile\": {\n")
+    print_field(f, "scanType", "solidState", indent_level=2)
+    print_field(f, "intensityProcessing", "normalization", indent_level=2)
+    print_field(f, "rayType", "IDEALIZED", indent_level=2)
+    print_field(f, "nearRangeM", 1.5, dec_place=1, indent_level=2)
+    print_field(f, "farRangeM", 75, indent_level=2)
+    print_field(f, "effectiveApertureSize", 0.01, dec_place=2, indent_level=2)
+    print_field(f, "focusDistM", 0.12, dec_place=2, indent_level=2)
+    print_field(f, "startAzimuthDeg", -scan_pattern.HFOV/2, dec_place=1, indent_level=2)
+    print_field(f, "endAzimuthDeg", scan_pattern.HFOV/2, dec_place=1, indent_level=2)
+    print_field(f, "upElevationDeg", scan_pattern.VFOV/2, dec_place=1, indent_level=2)
+    print_field(f, "downElevationDeg", scan_pattern.VFOV/2, dec_place=1, indent_level=2)
+    print_field(f, "rangeResolutionM", 0.01, dec_place=2, indent_level=2)
+    print_field(f, "rangeAccuracyM", 0.02, dec_place=2, indent_level=2)
+    print_field(f, "avgPowerW", 9, indent_level=2)
+    print_field(f, "minReflectance", 0.1, dec_place=1, indent_level=2)
+    print_field(f, "minReflectanceRange", 30, dec_place=1, indent_level=2)
+    print_field(f, "wavelengthNm", 905, indent_level=2)
+    print_field(f, "pulseTimeNs", 6, indent_level=2)
+    print_field(f, "maxReturns", 1, indent_level=2)
+    print_field(f, "scanRateBaseHz", scan_pattern.frame_rate_hz, indent_level=2)
+    print_field(f, "reportRateBaseHz", scan_pattern.frame_rate_hz, indent_level=2)
+    print_field(f, "numberOfEmitters", scan_pattern.total_point, indent_level=2)
+    print_field(f, "numberOfChannels", scan_pattern.total_point, indent_level=2)
+    # Obtained from spec
+    print_field(f, "azimuthErrorMean", 0, indent_level=2)
+    print_field(f, "azimuthErrorStd", 0.025, dec_place=3, indent_level=2)
+    print_field(f, "elevationErrorMean", 0, indent_level=2)
+    print_field(f, "elevationErrorStd", 0.025, dec_place=3, indent_level=2)
+    print_field(f, "stateResolutionStep", 1, indent_level=2)
+    print_field(f, "numLines", scan_pattern.num_scanline, indent_level=2)
+
+    # Handling of array type fields
+    num_ray_per_line_array = np.ones((scan_pattern.num_scanline,1)) * scan_pattern.num_point_per_line
+    print_array(f, "numRaysPerLine", num_ray_per_line_array, indent_level=2)
+    print_field(f, "emitterStateCount", 1, indent_level=2)
+
+    # Handling of emmite state object which include all arrays of az, el and firing time
+    f.write("    \"emitterStates\": [\n      {\n")
+
+    # Construct arrays with num_line rows and num_points_per_line columns
+    az_mat = scan_pattern.az_vec_deg.reshape((int(scan_pattern.num_scanline), int(scan_pattern.num_point_per_line)))
+    el_mat = scan_pattern.el_vec_deg.reshape((int(scan_pattern.num_scanline), int(scan_pattern.num_point_per_line)))
+    time_mat = scan_pattern.time_vec_ns.reshape((int(scan_pattern.num_scanline), int(scan_pattern.num_point_per_line)))
+    
+    print_array(f, "azimuthDeg", az_mat, dec_place=2, indent_level=3)
+    print_array(f, "elevationDeg", el_mat, dec_place=2, indent_level=3)
+    print_array(f, "fireTimeNs", time_mat, comma=False, indent_level=3)
+
+    # Closing characters for emmiterStates object
+    f.write("      }\n    ],\n")
+
+    print_field(f, "intensityMappingType", "LINEAR", comma=False)
+
+    # Closing characters for document
+    f.write("  }\n")
+    f.write("}")
+    f.close()
+    
+
+
 
 
 if __name__ == "__main__":
     lidar_params = parse_arg().parse_args()
 
     # Construct output file name  
-    output_json_filename = "BF1_"+str(lidar_params.freq)+"_"+str(lidar_params.hor_meas_fov)+"_"+str(lidar_params.ver_meas_fov)+"_"+str(lidar_params.hor_ang_res)+ \
-        "_"+str(lidar_params.num_scan_up)+"_"+str(lidar_params.num_scan_down)+".json"
+    output_filename = "BF1_"+str(lidar_params.freq)+"_"+str(lidar_params.hor_meas_fov)+"_"+str(lidar_params.ver_meas_fov)+"_"+str(lidar_params.hor_ang_res)+ \
+        "_"+str(lidar_params.num_scan_up)+"_"+str(lidar_params.num_scan_down)
     
     # Check lidar param values
     if not is_valid_params(lidar_params):
@@ -136,4 +266,4 @@ if __name__ == "__main__":
 
     scan_pattern = gen_scan_pattern(lidar_params)
 
-    print(scan_pattern.time_vec_ns)
+    create_lidar_json(scan_pattern, output_filename)
