@@ -273,7 +273,7 @@ def visualize(scan_pattern: ScanPattern, project_dist:float):
     y_proj = project_dist * np.tan(DEG2RAD * scan_pattern.el_vec_deg)
     color_vec = scan_pattern.time_vec_ns / scan_pattern.time_vec_ns[-1]
     ax2 = plt.subplot(1,2,2)
-    ax2.scatter(x_proj, y_proj, 2,color_vec)
+    ax2.scatter(x_proj, y_proj, 50,color_vec, edgecolors='k')
     ax2.set_xlabel('X (m)', fontsize=20)
     ax2.set_ylabel('Y (m)',fontsize=20)
     ax2.set_title('Projected scan pattern',fontsize=20)
