@@ -3,7 +3,6 @@
 # 2025/02/24
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 
 class ScanPattern(object):
     frame_rate_hz = 0
@@ -16,8 +15,11 @@ class ScanPattern(object):
     el_vec_deg = np.array([])
     HFOV = 0
     VFOV = 0
+    # Store mirror movement
+    mirror_vec_deg = np.array([]) 
+    mirror_time_vec = np.array([])
 
-    def __init__(self, frame_period_s, total_point, num_scanline, time_vec_ns, az_vec_deg, el_vec_deg, hfov, vfov):
+    def __init__(self, frame_period_s, total_point, num_scanline, time_vec_ns, az_vec_deg, el_vec_deg, hfov, vfov, mirror_hor_vec, mirror_time_vec):
         self.frame_period_s = frame_period_s
         self.frame_rate_hz = 1/frame_period_s
         self.num_scanline = num_scanline
@@ -28,6 +30,8 @@ class ScanPattern(object):
         self.el_vec_deg = el_vec_deg
         self.HFOV = hfov
         self.VFOV = vfov
+        self.mirror_vec_deg = mirror_hor_vec
+        self.mirror_time_vec = mirror_time_vec
 
 def parse_arg():
     # Expose as much real life configuration from Blickfeld Cube1 as posible along with emulate real-life constraint
@@ -46,6 +50,7 @@ The output file is labeled BF1_<FREQ>_<HOR_MEAS_FOV>_<VER_MEAS_FOV>_<HOR_ANG_RES
     parser.add_argument('--hor_ang_res', type=int, default=4, help='Horizontal angular resolution of measurements in deci degrees. Defaults to 4 deci deg [4 - 10] ')
     parser.add_argument('--num_scan_up', type=int, default=200, help='Number of scanlines in the up ramp phase. Default is 200 [1 - 200]')
     parser.add_argument('--num_scan_down', type=int, default=200, help='Number of scanlines in the down ramp phase. Default is 200 [1 - 200]')
+    parser.add_argument('--draw', action='store_true', help='Generate visualization of mirror movement and projected scan pattern')
     return parser
 
 def is_valid_params(lidar_params):
@@ -113,6 +118,8 @@ def gen_scan_pattern(lidar_params) -> ScanPattern:
     ver_ang_deg = np.round((0.5 * lidar_params.ver_meas_fov * np.sin(2 * np.pi * lidar_params.freq * time_vec_s)) * ramp_func,2)
 
     # Remove entris outside the horizontal meas FOV
+    mirror_hor_ang_deg = hor_ang_deg.copy()
+    mirror_time_vec = time_vec_ns.copy()
     ind_out_FOV = np.flatnonzero(np.abs(hor_ang_deg) > lidar_params.hor_meas_fov/2)
     time_vec_ns = np.delete(time_vec_ns, ind_out_FOV)
     hor_ang_deg = np.delete(hor_ang_deg, ind_out_FOV)
@@ -121,7 +128,7 @@ def gen_scan_pattern(lidar_params) -> ScanPattern:
     num_point = ver_ang_deg.size
 
     return ScanPattern(frame_period_s, num_point, tot_num_scanline, time_vec_ns, 
-                       hor_ang_deg, ver_ang_deg, lidar_params.hor_meas_fov, lidar_params.ver_meas_fov)
+                       hor_ang_deg, ver_ang_deg, lidar_params.hor_meas_fov, lidar_params.ver_meas_fov, mirror_hor_ang_deg,mirror_time_vec)
 
 def print_field(file_obj, key: str, val, comma = True, dec_place = 0, indent_level=1):
     for ii in range(indent_level):
@@ -249,8 +256,28 @@ def create_lidar_json(scan_pattern: ScanPattern, filename: str):
     f.write("}")
     f.close()
     
+def visualize(scan_pattern: ScanPattern, project_dist:float):
+    import matplotlib.pyplot as plt
 
+    ax1 = plt.subplot(1,2,1)
+    ax1.plot(scan_pattern.mirror_time_vec, scan_pattern.mirror_vec_deg, label='Hor')
+    ax1.plot(scan_pattern.time_vec_ns, scan_pattern.el_vec_deg, label='Ver')
+    ax1.set_xlabel('Time (ns)', fontsize=20)
+    ax1.set_ylabel('Mirror angle ($^o$)',fontsize=20)
+    ax1.set_title('Mirror movement',fontsize=20)
+    ax1.legend()
 
+    # Project the point to a plane
+    DEG2RAD = 0.0174533
+    x_proj = project_dist * np.tan(DEG2RAD * scan_pattern.az_vec_deg)
+    y_proj = project_dist * np.tan(DEG2RAD * scan_pattern.el_vec_deg)
+    color_vec = scan_pattern.time_vec_ns / scan_pattern.time_vec_ns[-1]
+    ax2 = plt.subplot(1,2,2)
+    ax2.scatter(x_proj, y_proj, 2,color_vec)
+    ax2.set_xlabel('X (m)', fontsize=20)
+    ax2.set_ylabel('Y (m)',fontsize=20)
+    ax2.set_title('Projected scan pattern',fontsize=20)
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -264,6 +291,12 @@ if __name__ == "__main__":
     if not is_valid_params(lidar_params):
         exit()
 
+    # Generate scan patter
     scan_pattern = gen_scan_pattern(lidar_params)
 
+    # Generate JSON file
     create_lidar_json(scan_pattern, output_filename)
+
+    # Visualize
+    if lidar_params.draw:
+        visualize(scan_pattern, 2)
