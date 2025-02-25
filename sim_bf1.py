@@ -208,7 +208,7 @@ def create_lidar_json(scan_pattern: ScanPattern, filename: str):
     print_field(f, "startAzimuthDeg", -scan_pattern.HFOV/2, dec_place=1, indent_level=2)
     print_field(f, "endAzimuthDeg", scan_pattern.HFOV/2, dec_place=1, indent_level=2)
     print_field(f, "upElevationDeg", scan_pattern.VFOV/2, dec_place=1, indent_level=2)
-    print_field(f, "downElevationDeg", scan_pattern.VFOV/2, dec_place=1, indent_level=2)
+    print_field(f, "downElevationDeg", -scan_pattern.VFOV/2, dec_place=1, indent_level=2)
     print_field(f, "rangeResolutionM", 0.01, dec_place=2, indent_level=2)
     print_field(f, "rangeAccuracyM", 0.02, dec_place=2, indent_level=2)
     print_field(f, "avgPowerW", 9, indent_level=2)
